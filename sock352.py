@@ -46,7 +46,33 @@ privateKeys = {}
 ENCRYPT = 236 
 
 # this is the structure of the sock352 packet 
-sock352HdrStructStr = '!BBBBHHLLQQLL'
+PACKET_HEADER_FORMAT = '!BBBBHHLLQQLL'
+PACKET_HEADER_LENGTH = struct.calcsize(PACKET_HEADER_FORMAT)
+
+# sending and receiving ports of the socket
+portTx = 0
+portRx = 0
+
+# maximum payload size
+MAXIMUM_PACKET_SIZE = 64000
+MAXIMUM_PAYLOAD_SIZE = MAXIMUM_PACKET_SIZE - PACKET_HEADER_LENGTH
+
+# define all the packet bits
+SOCK352_SYN = 0x01
+SOCK352_FIN = 0x02
+SOCK352_ACK = 0x04
+SOCK352_RESET = 0x08
+SOCK352_HAS_OPT = 0x10
+
+# store the index for the flag, sequence no. and ack no. within the packet header
+PACKET_FLAG_INDEX = 1
+PACKET_SEQUENCE_NO_INDEX = 8
+PACKET_ACK_NO_INDEX = 9
+
+# String message to print out that a connection has been already established
+CONNECTION_ALREADY_ESTABLISHED_MESSAGE = "This socket supports a maximum of one connection\n" \
+                                 "And a connection is already established"
+
 
 def init(UDPportTx,UDPportRx):
     global sock352portTx
