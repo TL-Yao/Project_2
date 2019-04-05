@@ -9,6 +9,8 @@ import binascii
 import socket as syssock
 import struct
 import sys
+from random import randint
+import threading
 
 # encryption libraries
 import nacl.utils
@@ -74,12 +76,21 @@ CONNECTION_ALREADY_ESTABLISHED_MESSAGE = "This socket supports a maximum of one 
                                  "And a connection is already established"
 
 
-def init(UDPportTx,UDPportRx):
+def init(UDPportTx, UDPportRx):
     global sock352portTx
     global sock352portRx
 
-    # create the sockets to send and receive UDP packets on 
-    # if the ports are not equal, create two sockets, one for Tx and one for Rx
+    # Sets the transmit port to 27182 (default) if its None or 0
+    if UDPportTx is None or UDPportTx == 0:
+        UDPportTx = 27182
+
+    # Sets the receive port to 27182 (default) if its None or 0
+    if UDPportRx is None or UDPportRx == 0:
+        UDPportRx = 27182
+
+    # Assigns the global transmit and receive ports to be the one passed in through this method
+    sock352portTx = int(UDPportTx)
+    sock352portRx = int(UDPportRx)
 
     
 # read the keyfile. The result should be a private key and a keychain of
@@ -98,42 +109,56 @@ def readKeyChain(filename):
                 # check if a comment
                 # more than 2 words, and the first word does not have a
                 # hash, we may have a valid host/key pair in the keychain
-                if ( (len(words) >= 4) and (words[0].find("#") == -1)):
+                if (len(words) >= 4) and (words[0].find("#") == -1):
                     host = words[1]
                     port = words[2]
                     keyInHex = words[3]
-                    if (words[0] == "private"):
-                        privateKeysHex[(host,port)] = keyInHex
-                        privateKeys[(host,port)] = nacl.public.PrivateKey(keyInHex, nacl.encoding.HexEncoder)
-                    elif (words[0] == "public"):
-                        publicKeysHex[(host,port)] = keyInHex
-                        publicKeys[(host,port)] = nacl.public.PublicKey(keyInHex, nacl.encoding.HexEncoder)
-        except Exception,e:
-            print ( "error: opening keychain file: %s %s" % (filename,repr(e)))
+                    if words[0] == "private":
+                        privateKeysHex[(host, port)] = keyInHex
+                        privateKeys[(host, port)] = nacl.public.PrivateKey(keyInHex, nacl.encoding.HexEncoder)
+                    elif words[0] == "public":
+                        publicKeysHex[(host, port)] = keyInHex
+                        publicKeys[(host, port)] = nacl.public.PublicKey(keyInHex, nacl.encoding.HexEncoder)
+        except Exception, e:
+            print ("error: opening keychain file: %s %s" % (filename, repr(e)))
     else:
             print ("error: No filename presented")             
 
-    return (publicKeys,privateKeys)
+    return publicKeys, privateKeys
+
 
 class socket:
     
     def __init__(self):
-        # your code goes here 
-        return 
+        # creates the socket
+        self.socket = syssock.socket(syssock.AF_INET, syssock.SOCK_DGRAM)
+        self.socket.settimeout(0.2)
+        self.send_address = None
+        self.is_connected = False
+        self.can_close = False
+        self.sequence_no = randint(1, 100000)
+        self.ack_no = 0
+        self.data_packets = []
+        self.file_len = -1
+        self.retransmit = False
+        self.encrypt = False
+        # the corresponding lock for the retransmit boolean
+        self.retransmit_lock = threading.Lock()
+        # declares the last packet that was acked (for the sender only)
+        self.last_data_packet_acked = None
         
-    def bind(self,address):
-        # bind is not used in this assignment 
-        return
+    def bind(self, address):
+        self.socket.bind((address[0], portRx))
 
-    def connect(self,*args):
+    def connect(self, *args):
 
         # example code to parse an argument list (use option arguments if you want)
         global sock352portTx
         global ENCRYPT
-        if (len(args) >= 1): 
-            (host,port) = args[0]
-        if (len(args) >= 2):
-            if (args[1] == ENCRYPT):
+        if len(args) >= 1:
+            self.send_address = args[0]
+        if len(args) >= 2:
+            if args[1] == ENCRYPT:
                 self.encrypt = True
                 
         # your code goes here 
