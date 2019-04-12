@@ -75,6 +75,8 @@ PACKET_ACK_NO_INDEX = 9
 CONNECTION_ALREADY_ESTABLISHED_MESSAGE = "This socket supports a maximum of one connection\n" \
                                  "And a connection is already established"
 
+# Box
+server_box = None
 
 def init(UDPportTx, UDPportRx):
     global sock352portTx
@@ -170,12 +172,90 @@ class socket:
 
     def accept(self,*args):
         # example code to parse an argument list (use option arguments if you want)
-        global ENCRYPT
-        if (len(args) >= 1):
-            if (args[0] == ENCRYPT):
-                self.encryption = True
+        global ENCRYPT, server_box
+
+        # makes sure again that the server is not already connected
+        # because part 1 supports a single connection only
+        if self.is_connected:
+            print (CONNECTION_ALREADY_ESTABLISHED_MESSAGE)
+            return
+
+        # Keeps trying to receive the request to connect from a potential client until we get a connection request
+        got_connection_request = False
+        while not got_connection_request:
+            try:
+                # tries to receive a potential SYN packet and unpacks it
+                (syn_packet, addr) = self.socket.recvfrom(PACKET_HEADER_LENGTH)
+                syn_packet = struct.unpack(PACKET_HEADER_FORMAT, syn_packet)
+
+                # if the received packet is not a SYN packet, it ignores the packet
+                if syn_packet[PACKET_FLAG_INDEX] == SOCK352_SYN:
+                    got_connection_request = True
+            # if the receive times out while receiving a SYN packet, it tries to listen again
+            except syssock.timeout:
+                pass
+
+        # Step 2: Send a SYN/ACK packet for the 3-way handshake
+        # creates the flags bit to be the bit-wise OR of SYN/ACK
+        flags = SOCK352_SYN | SOCK352_ACK
+        # creates the SYN/ACK packet to ACK the connection request from client
+        # and sends the SYN to establish the connection from this end
+        syn_ack_packet = self.createPacket(flags=flags,
+                                           sequence_no=self.sequence_no,
+                                           ack_no=syn_packet[PACKET_SEQUENCE_NO_INDEX] + 1)
+        # increments the sequence number as it just consumed it when creating the SYN/ACK packet
+        self.sequence_no += 1
+        # sends the created packet to the address from which it received the SYN packet
+        self.socket.sendto(syn_ack_packet, addr)
+
+        # Receive the final ACK to complete the handshake and establish connection
+        got_final_ack = False
+        while not got_final_ack:
+            try:
+                # keeps trying to receive the final ACK packet to finalize the connection
+                (ack_packet, addr) = self.socket.recvfrom(PACKET_HEADER_LENGTH)
+                ack_packet = struct.unpack(PACKET_HEADER_FORMAT, ack_packet)
+                # if the unpacked packet has the ACK flag set, we are done
+                if ack_packet[PACKET_FLAG_INDEX] == SOCK352_ACK:
+                    got_final_ack = True
+            # if the server times out when trying to receive the final ACK, it retransmits the SYN/ACK packet
+            except syssock.timeout:
+                self.socket.sendto(syn_ack_packet, addr)
+
+        # updates the server's ack number to be the last packet's sequence number + 1
+        self.ack_no = ack_packet[PACKET_SEQUENCE_NO_INDEX] + 1
+
+        # updates the server's send address
+        self.send_address = (addr[0], portTx)
+
+        # connect to the client using the send address just set
+        # self.socket.connect(self.send_address)
+
+        # updates the connected boolean to reflect that the server is now connected
+        self.is_connected = True
+
+        print("Server is now connected to the client at %s:%s" % (self.send_address[0], self.send_address[1]))
+
+        if len(args) >= 1:
+            if args[0] == ENCRYPT:
+                self.encrypt = True
+                if (addr[0], str(portTx)) in privateKeys:
+                    secret_key = privateKeys[(addr[0], str(portTx))]
+                else:
+                    print 'not find private key in accept()'
+                    return 0, 0
+
+                if (addr[0], str(portRx)) in publicKeys:
+                    public_key = publicKeys[(addr[0], str(portRx))]
+                else:
+                    print 'not find public key in accept()'
+                    return 0, 0
+
+                server_box = Box(secret_key, public_key)
+
         # your code goes here 
 
+        return self, addr
     def close(self):
         # your code goes here 
         return 
