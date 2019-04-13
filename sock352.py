@@ -160,7 +160,7 @@ class socket:
 
         # example code to parse an argument list (use option arguments if you want)  
         if len(args) >= 1:
-            self.send_address = args[0][0]
+            self.send_address = (args[0][0], portTx)
             self.socket.bind((args[0][0], portRx))
             if self.is_connected:
                 print (CONNECTION_ALREADY_ESTABLISHED_MESSAGE)
@@ -174,7 +174,7 @@ class socket:
             self.socket.sendto(syn_packet, self.send_address)
             # increments the sequence since it was consumed in creation of the SYN packet
             self.sequence_no += 1
-
+            print("Connection request sent to server")
             received_handshake_packet = False
             while not received_handshake_packet:
                 try:
@@ -243,15 +243,15 @@ class socket:
         if self.is_connected:
             print (CONNECTION_ALREADY_ESTABLISHED_MESSAGE)
             return
-
         # Keeps trying to receive the request to connect from a potential client until we get a connection request
         got_connection_request = False
         while not got_connection_request:
             try:
+                print("received first handshake")
                 # tries to receive a potential SYN packet and unpacks it
                 (syn_packet, addr) = self.socket.recvfrom(PACKET_HEADER_LENGTH)
                 syn_packet = struct.unpack(PACKET_HEADER_FORMAT, syn_packet)
-
+                
                 # if the received packet is not a SYN packet, it ignores the packet
                 if syn_packet[PACKET_FLAG_INDEX] == SOCK352_SYN:
                     got_connection_request = True
