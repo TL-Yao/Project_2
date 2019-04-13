@@ -410,9 +410,9 @@ class socket:
                 # the connection was unexpectedly closed/broken
                 try:
                     self.socket.sendto(self.data_packets[resend_start_index], self.send_address)
-                    print '---- %d bytes sent' % len(self.data_packets[resend_start_index])
+                    print '---- %d bytes sent, package %d' % (len(self.data_packets[resend_start_index]), resend_start_index)
 
-                    # print 'sent %d in send()' % sys.getsizeof(self.data_packets[resend_start_index])
+                # print 'sent %d in send()' % sys.getsizeof(self.data_packets[resend_start_index])
                 # Catch error 111 (Connection refused) in the case where the last ack
                 # was received by this sender and thus the connection was closed
                 # by the receiver but it happened between this sender's checking
@@ -453,7 +453,7 @@ class socket:
                 # by the sender on the other side)
                 print '%d bytes left to receive' % (bytes_to_receive + PACKET_HEADER_LENGTH)
                 if self.encrypt:
-                    packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive + ENCRYPT_SIZE)
+                    packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive + ENCRYPT_SIZE + 100000)
                 else:
                     packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive)
                 print '%d bytes received' % len(packet_received)
