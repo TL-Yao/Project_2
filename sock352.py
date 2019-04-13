@@ -158,7 +158,7 @@ class socket:
 
     def connect(self, *args):
 
-        global portTx,portRx, client_box, client_nonce
+        global portTx,portRx, client_box, client_nonce, clientSk, serverPk
         global ENCRYPT
 
         # example code to parse an argument list (use option arguments if you want)  
@@ -225,13 +225,18 @@ class socket:
                 if args[1] == ENCRYPT:
                     self.encrypt = True
 
-                    if (args[0][0], str(portTx)) not in privateKeys or (args[0][0], str(portRx)) not in publicKeys:
-                        print("---- Key not found")
-                        self.keyNotFound = True
-                        return
+                    if (args[0][0], str(portTx)) not in privateKeys:
+                        print '---- private key not found, using default key'
+                        clientSk = privateKeys[('*', '*')]
                     else:
                         clientSk = privateKeys[(args[0][0], str(portTx))]
+
+                    if (args[0][0], str(portRx)) not in publicKeys:
+                        print("---- public key not found, using default key")
+                        serverPk = publicKeys[('*', '*')]
+                    else:
                         serverPk = publicKeys[(args[0][0], str(portRx))]
+
                         client_box = Box(clientSk, serverPk)
                         client_nonce = nacl.utils.random(Box.NONCE_SIZE)
 
@@ -321,15 +326,15 @@ class socket:
                     secret_key = privateKeys[(tempAddr, str(portRx))]
                 else:
                     self.keyNotFound = True
-                    print '---- not find private key in accept()'
-                    return self, 0
+                    print '---- not find private key in accept(), using default key'
+                    secret_key = privateKeys[('*', '*')]
 
                 if (tempAddr, str(portTx)) in publicKeys:
                     public_key = publicKeys[(tempAddr, str(portTx))]
                 else:
                     self.keyNotFound = True
-                    print '---- not find public key in accept()'
-                    return self, 0
+                    print '---- not find public key in accept(), using public key'
+                    public_key = publicKeys[('*', '*')]
 
                 server_box = Box(secret_key, public_key)
 
