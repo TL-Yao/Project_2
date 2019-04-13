@@ -38,7 +38,6 @@ global privateKeys
 
 # the encryption flag 
 global ENCRYPT
-global client_box
 
 publicKeysHex = {} 
 privateKeysHex = {} 
@@ -78,6 +77,8 @@ CONNECTION_ALREADY_ESTABLISHED_MESSAGE = "This socket supports a maximum of one 
 
 # Box
 server_box = None
+client_box = None
+client_nonce = None
 
 def init(UDPportTx, UDPportRx):
     global portTx
@@ -104,7 +105,7 @@ def readKeyChain(filename):
     global publicKeys
     global privateKeys 
     
-    if (filename):
+    if filename:
         try:
             keyfile_fd = open(filename,"r")
             for line in keyfile_fd:
@@ -156,7 +157,7 @@ class socket:
 
     def connect(self, *args):
 
-        global portTx,portRx, client_box
+        global portTx,portRx, client_box, client_nonce
         global ENCRYPT
 
         # example code to parse an argument list (use option arguments if you want)  
@@ -220,7 +221,6 @@ class socket:
             self.socket.sendto(ack_packet, self.send_address)
             print ("---- third hand shake sent, Client is now connected to the server at %s:%s" % (self.send_address[0], self.send_address[1]))
 
-            #if encryption           
             if len(args) >= 2:
                 if args[1] == ENCRYPT:
                     self.encrypt = True
@@ -232,13 +232,11 @@ class socket:
                         clientSk = privateKeys[(args[0][0], str(portTx))]
                         serverPk = publicKeys[(args[0][0], str(portRx))]
                         client_box = Box(clientSk, serverPk)
-                        nonce = nacl.utils.random(Box.NONCE_SIZE)
-
+                        client_nonce = nacl.utils.random(Box.NONCE_SIZE)
 
     def listen(self,backlog):
         # listen is not used in this assignments 
         pass
-    
 
     def accept(self,*args):
         # example code to parse an argument list (use option arguments if you want)
@@ -319,22 +317,20 @@ class socket:
                 else:
                     tempAddr = addr[0]
 
-                if (tempAddr, str(portTx)) in privateKeys:
-                    secret_key = privateKeys[(tempAddr, str(portTx))]
+                if (tempAddr, str(portRx)) in privateKeys:
+                    secret_key = privateKeys[(tempAddr, str(portRx))]
                 else:
                     print privateKeysHex
                     print '---- not find private key in accept()'
-                    return 0, 0
+                    return self, 0
 
-                if (tempAddr, str(portRx)) in publicKeys:
-                    public_key = publicKeys[(tempAddr, str(portRx))]
+                if (tempAddr, str(portTx)) in publicKeys:
+                    public_key = publicKeys[(tempAddr, str(portTx))]
                 else:
                     print '---- not find public key in accept()'
-                    return 0, 0
+                    return self, 0
 
                 server_box = Box(secret_key, public_key)
-
-        # your code goes here 
 
         return self, addr
 
@@ -482,12 +478,16 @@ class socket:
 
     # creates a generic packet to be sent using parameters that are
     # relevant to Part 1. The default values are specified above in case one or more parameters are not used
-    def createPacket(self, flags=0x0, sequence_no=0x0, ack_no=0x0, payload_len=0x0):
+    def createPacket(self, flags=0x0, sequence_no=0x0, ack_no=0x0, payload_len=0x0, opt_ptr=0x0):
+        if self.encrypt:
+            opt_ptr = 0x1
+
+        print '---- flag opt_ptr: %d' % opt_ptr
         return struct.Struct(PACKET_HEADER_FORMAT).pack \
             (
                 0x1,  # version
                 flags,  # flags
-                0x0,  # opt_ptr
+                opt_ptr,  # opt_ptr
                 0x0,  # protocol
                 PACKET_HEADER_LENGTH,  # header_len
                 0x0,  # checksum
@@ -501,7 +501,7 @@ class socket:
 
     # method responsible for breaking apart the buffer into chunks of maximum payload length
     def create_data_packets(self, buffer):
-
+        global client_box, client_nonce
         # calculates the total packets needed to transmit the entire buffer
         total_packets = len(buffer) / MAXIMUM_PAYLOAD_SIZE
 
@@ -535,8 +535,7 @@ class socket:
 
             message = buffer[MAXIMUM_PAYLOAD_SIZE * i: MAXIMUM_PAYLOAD_SIZE * i + payload_len]
             if self.encrypt:
-                nonce = nacl.utils.random(client_box.NONCE_SIZE)
-                message = client_box.encrypt(message, nonce)
+                message = client_box.encrypt(message, client_nonce)
 
             # attaches the payload length of buffer to the end of the header to finish constructing the packet
             self.data_packets.append(new_packet + message)
