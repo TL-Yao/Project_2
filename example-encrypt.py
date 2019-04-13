@@ -48,6 +48,11 @@ except TypeError:
 # Alice does the same and then Alice and Bob exchange public keys
 skalice = PrivateKey.generate()
 pkalice = skalice.public_key
+skaliceHex = skalice.encode(encoder=nacl.encoding.HexEncoder)
+pkaliceHex = pkalice.encode(encoder=nacl.encoding.HexEncoder)
+print ("alice secret key is: %s" % (skaliceHex))
+print ("alice public key is: %s" % (pkaliceHex))
+
 
 # Bob wishes to send Alice an encrypted message so Bob must make a Box with
 #   his private key and Alice's public key

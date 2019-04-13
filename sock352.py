@@ -160,7 +160,7 @@ class socket:
 
         # example code to parse an argument list (use option arguments if you want)  
         if len(args) >= 1:
-            self.send_address = args[0][0]
+            self.send_address = (args[0][0], portTx)
             self.socket.bind((args[0][0], portRx))
             if self.is_connected:
                 print (CONNECTION_ALREADY_ESTABLISHED_MESSAGE)
@@ -174,6 +174,8 @@ class socket:
             self.socket.sendto(syn_packet, self.send_address)
             # increments the sequence since it was consumed in creation of the SYN packet
             self.sequence_no += 1
+
+            print '---- first handshake sent'
 
             received_handshake_packet = False
             while not received_handshake_packet:
@@ -198,6 +200,8 @@ class socket:
                 except syssock.timeout:
                     self.socket.sendto(syn_packet, self.send_address)
 
+            print '---- second handshake receive'
+
             # sets the client's acknowledgement number to be SYN/ACK packet's sequence number + 1
             self.ack_no = syn_ack_packet[PACKET_SEQUENCE_NO_INDEX] + 1
 
@@ -213,19 +217,20 @@ class socket:
 
             # sends the ack packet to the server, as it assumes it's connected now
             self.socket.sendto(ack_packet, self.send_address)
-            print ("Client is now connected to the server at %s:%s" % (self.send_address[0], self.send_address[1]))
+            print ("---- third hand shake sent, Client is now connected to the server at %s:%s" % (self.send_address[0], self.send_address[1]))
 
             #if encryption           
             if len(args) >= 2:
                 if args[1] == ENCRYPT:
                     self.encrypt = True
-                    if not privateKeys[(args[0][0],portTx)] or not publicKeys[args[0]]:
-                        print("Key not found")
+                    print args[0][1]
+                    if (args[0][0], str(portTx)) not in privateKeys or (args[0][0], str(portRx)) not in publicKeys:
+                        print("---- Key not found")
                         return
                     else:
-                        clientSk = privateKeys[(args[0][0],portTx)]
-                        serverPk = publicKeys[args[0]]
-                        clinet_box = Box(clientSk, serverPk)
+                        clientSk = privateKeys[(args[0][0], str(portTx))]
+                        serverPk = publicKeys[(args[0][0], str(portRx))]
+                        client_box = Box(clientSk, serverPk)
                         nonce = nacl.utils.random(Box.NONCE_SIZE)
 
 
@@ -259,6 +264,8 @@ class socket:
             except syssock.timeout:
                 pass
 
+        print '---- first handshake received'
+
         # Step 2: Send a SYN/ACK packet for the 3-way handshake
         # creates the flags bit to be the bit-wise OR of SYN/ACK
         flags = SOCK352_SYN | SOCK352_ACK
@@ -271,6 +278,7 @@ class socket:
         self.sequence_no += 1
         # sends the created packet to the address from which it received the SYN packet
         self.socket.sendto(syn_ack_packet, addr)
+        print '---- second handshake sent'
 
         # Receive the final ACK to complete the handshake and establish connection
         got_final_ack = False
@@ -286,6 +294,7 @@ class socket:
             except syssock.timeout:
                 self.socket.sendto(syn_ack_packet, addr)
 
+        print '---- third handshake received'
         # updates the server's ack number to be the last packet's sequence number + 1
         self.ack_no = ack_packet[PACKET_SEQUENCE_NO_INDEX] + 1
 
@@ -298,21 +307,28 @@ class socket:
         # updates the connected boolean to reflect that the server is now connected
         self.is_connected = True
 
-        print("Server is now connected to the client at %s:%s" % (self.send_address[0], self.send_address[1]))
+        print("---- Server is now connected to the client at %s:%s" % (self.send_address[0], self.send_address[1]))
 
         if len(args) >= 1:
             if args[0] == ENCRYPT:
                 self.encrypt = True
-                if (addr[0], str(portTx)) in privateKeys:
-                    secret_key = privateKeys[(addr[0], str(portTx))]
+
+                if addr[0] == '127.0.0.1':
+                    tempAddr = 'localhost'
                 else:
-                    print 'not find private key in accept()'
+                    tempAddr = addr[0]
+
+                if (tempAddr, str(portTx)) in privateKeys:
+                    secret_key = privateKeys[(tempAddr, str(portTx))]
+                else:
+                    print privateKeysHex
+                    print '---- not find private key in accept()'
                     return 0, 0
 
-                if (addr[0], str(portRx)) in publicKeys:
-                    public_key = publicKeys[(addr[0], str(portRx))]
+                if (tempAddr, str(portRx)) in publicKeys:
+                    public_key = publicKeys[(tempAddr, str(portRx))]
                 else:
-                    print 'not find public key in accept()'
+                    print '---- not find public key in accept()'
                     return 0, 0
 
                 server_box = Box(secret_key, public_key)
@@ -320,15 +336,16 @@ class socket:
         # your code goes here 
 
         return self, addr
+
     def close(self):
         # your code goes here 
         return 
 
-    def send(self,buffer):
+    def send(self, buffer):
         # your code goes here 
         return 
 
-    def recv(self,nbytes):
+    def recv(self, nbytes):
         # your code goes here
         return 
 
