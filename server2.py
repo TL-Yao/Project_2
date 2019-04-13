@@ -76,7 +76,7 @@ def main():
     # when accept returns, the client is connected 
     (s2,address) = s.accept(sock352.ENCRYPT) 
     start_stamp = time.clock()
-'''
+
     # this receives the size of the file
     # as a 4 byte integer in network byte order (big endian)
     longPacker = struct.Struct("!L")
@@ -99,7 +99,6 @@ def main():
         print ("server2: %s : received %d bytes in %d seconds, inf MB/s " % (status,filelen, lapsed_seconds))
     fd.close()
     s2.close()
-    '''
 
 # create a main function in Python
 if __name__ == "__main__":

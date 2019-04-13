@@ -71,7 +71,7 @@ SOCK352_HAS_OPT = 0x10
 PACKET_FLAG_INDEX = 1
 PACKET_SEQUENCE_NO_INDEX = 8
 PACKET_ACK_NO_INDEX = 9
-
+ENCRYPT_SIZE = 40
 # String message to print out that a connection has been already established
 CONNECTION_ALREADY_ESTABLISHED_MESSAGE = "This socket supports a maximum of one connection\n" \
                                  "And a connection is already established"
@@ -145,6 +145,7 @@ class socket:
         self.file_len = -1
         self.retransmit = False
         self.encrypt = False
+        self.total_size = 0
         # the corresponding lock for the retransmit boolean
         self.retransmit_lock = threading.Lock()
         # declares the last packet that was acked (for the sender only)
@@ -223,7 +224,7 @@ class socket:
             if len(args) >= 2:
                 if args[1] == ENCRYPT:
                     self.encrypt = True
-                    print args[0][1]
+
                     if (args[0][0], str(portTx)) not in privateKeys or (args[0][0], str(portRx)) not in publicKeys:
                         print("---- Key not found")
                         return
@@ -241,7 +242,7 @@ class socket:
 
     def accept(self,*args):
         # example code to parse an argument list (use option arguments if you want)
-        global ENCRYPT, server_box
+        global ENCRYPT, server_box, MAXIMUM_PAYLOAD_SIZE
 
         # makes sure again that the server is not already connected
         # because part 1 supports a single connection only
@@ -312,7 +313,7 @@ class socket:
         if len(args) >= 1:
             if args[0] == ENCRYPT:
                 self.encrypt = True
-
+                MAXIMUM_PAYLOAD_SIZE -= ENCRYPT_SIZE
                 if addr[0] == '127.0.0.1':
                     tempAddr = 'localhost'
                 else:
@@ -338,16 +339,146 @@ class socket:
         return self, addr
 
     def close(self):
-        # your code goes here 
-        return 
+        # makes sure there is a connection established in the first place before trying to close it
+        if not self.is_connected:
+            print ("No connection is currently established that can be closed")
+            return
+
+        # checks if the server can close the connection (it can close only when it has received the last packet/ack)
+        if self.can_close:
+            # calls the socket's close method to finally close the connection
+            self.socket.close()
+            # resets all the appropriate variables
+            self.send_address = None
+            self.is_connected = False
+            self.can_close = False
+            self.sequence_no = randint(1, 100000)
+            self.ack_no = 0
+            self.data_packets = []
+            self.file_len = -1
+            self.retransmit = False
+            self.last_data_packet_acked = None
+        # in the case that it cannot close, it prints out that it's still waiting for data
+        else:
+            print "Failed to close the connection!\n" \
+                  "Still waiting for data transmission/reception to finish"
 
     def send(self, buffer):
-        # your code goes here 
-        return 
+        # makes sure that the file length is set and has been communicated to the receiver
+        if self.file_len == -1:
+            self.socket.sendto(buffer, self.send_address)
+            self.file_len = struct.unpack("!L", buffer)[0]
+            print ("File length sent: " + str(self.file_len) + " bytes")
+            return self.file_len
+
+        # sets the starting sequence number and creates data packets starting from this number
+        start_sequence_no = self.sequence_no
+        total_packets = self.create_data_packets(buffer)
+        print '---- numer of packages: %d' % total_packets
+        # creates another thread that is responsible for receiving acks for the data packets sent
+        recv_ack_thread = threading.Thread(target=self.recv_acks, args=())
+        recv_ack_thread.setDaemon(True)
+        recv_ack_thread.start()
+
+        # starts the data packet transmission
+        print ("Started data packet transmission...")
+        while not self.can_close:
+            # calculates the index from which to start sending packets
+            # when sending the first time, it will be 0
+            # otherwise, when retransmitting, it will calculate the Go-Back-N based
+            # on the last data packet that was acked
+            if self.last_data_packet_acked is None:
+                resend_start_index = 0
+            else:
+                resend_start_index = int(self.last_data_packet_acked[PACKET_ACK_NO_INDEX]) - start_sequence_no
+
+            # checks if the packet to start retransmitting from is the total amount of packets this
+            # would mean the last data packet has been transmitted and so its safe to close the connection
+            if resend_start_index == total_packets:
+                self.can_close = True
+
+            # adjusts retransmit to indicate that the sender started retransmitting using locks
+            self.retransmit_lock.acquire()
+            self.retransmit = False
+            self.retransmit_lock.release()
+
+            # continually tries to transmit packets while the connection cannot be closed from resend start index
+            # to the rest of the packets (or at least until as much as it can)
+            while not self.can_close and resend_start_index < total_packets and not self.retransmit:
+
+                # tries to send the packet and catches any connection refused exception which might mean
+                # the connection was unexpectedly closed/broken
+                try:
+                    self.socket.sendto(self.data_packets[resend_start_index], self.send_address)
+                    print '---- %d bytes sent' % len(self.data_packets[resend_start_index])
+
+                    # print 'sent %d in send()' % sys.getsizeof(self.data_packets[resend_start_index])
+                # Catch error 111 (Connection refused) in the case where the last ack
+                # was received by this sender and thus the connection was closed
+                # by the receiver but it happened between this sender's checking
+                # of that connection close condition
+                except syssock.error, error:
+                    if error.errno != 111:
+                        raise error
+                    self.can_close = True
+                    break
+                resend_start_index += 1
+
+        # waits for recv thread to finish before returning from the method
+        recv_ack_thread.join()
+
+        print ("Finished transmitting data packets")
+        return len(buffer)
 
     def recv(self, nbytes):
-        # your code goes here
-        return 
+        # if the file length has not been set, receive the file length from the sender
+        if self.file_len == -1:
+            file_size_packet = self.socket.recv(struct.calcsize("!L"))
+            self.file_len = struct.unpack("!L", file_size_packet)[0]
+            print ("File Length Received: " + str(self.file_len) + " bytes")
+            return file_size_packet
+
+        # sets the bytes to receive to be how many bytes it expects
+        bytes_to_receive = nbytes
+
+        # also declares a variable to hold all the string of the data that has been received
+        data_received = ""
+
+        print ("Started receiving data packets...")
+        # keep trying to receive packets until the receiver has more bytes left to receive
+        while bytes_to_receive > 0:
+            # tries to receive the packet
+            try:
+                # receives the packet of header + maximum data size bytes (although it will be limited
+                # by the sender on the other side)
+                print '%d bytes left to receive' % (bytes_to_receive + PACKET_HEADER_LENGTH)
+                if self.encrypt:
+                    packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive + ENCRYPT_SIZE)
+                else:
+                    packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive)
+                print '%d bytes received' % len(packet_received)
+
+                # sends the packet to another method to manage it and gets back the data in return
+                str_received = self.manage_recvd_data_packet(packet_received)
+
+                # adjusts the numbers accordingly based on return value of manage data packet
+                if str_received is not None:
+                    # appends the data received to the total buffer of all the data received so far
+                    data_received += str_received
+                    # decrements bytes to receive by the length of last data received since that many
+                    # less bytes need to be transmitted now
+                    bytes_to_receive -= len(str_received)
+
+            # catches timeout, in which case it just tries to another packet
+            except syssock.timeout:
+                pass
+
+        # since it's done with receiving all the bytes, it marks the socket as safe to close
+        self.can_close = True
+
+        print ("Finished receiving the data")
+        # returns the data received
+        return data_received
 
     # creates a generic packet to be sent using parameters that are
     # relevant to Part 1. The default values are specified above in case one or more parameters are not used
@@ -368,8 +499,114 @@ class socket:
                 payload_len  # payload_len
             )
 
+    # method responsible for breaking apart the buffer into chunks of maximum payload length
+    def create_data_packets(self, buffer):
 
+        # calculates the total packets needed to transmit the entire buffer
+        total_packets = len(buffer) / MAXIMUM_PAYLOAD_SIZE
 
-    
+        # if the length of the buffer is not divisible by the maximum payload size,
+        # that means an extra packet will need to be sent to transmit the left over data
+        # so it increments total packets by 1
+        if len(buffer) % MAXIMUM_PAYLOAD_SIZE != 0:
+            total_packets += 1
 
+        # sets the payload length to be the maximum payload size
+        payload_len = MAXIMUM_PAYLOAD_SIZE
 
+        # iterates up to total packets and creates each packet
+        for i in range(0, total_packets):
+            # if we are about to construct the last packet, checks if the payload length
+            # needs to adjust to reflect the left over size or the entire maximum packet size
+
+            if i == total_packets - 1:
+                if len(buffer) % MAXIMUM_PAYLOAD_SIZE != 0:
+                    payload_len = len(buffer) % MAXIMUM_PAYLOAD_SIZE
+                    print '----- last package size: %d' % payload_len
+
+            # creates the new packet with the appropriate header
+            new_packet = self.createPacket(flags=0x0,
+                                           sequence_no=self.sequence_no,
+                                           ack_no=self.ack_no,
+                                           payload_len=payload_len)
+            # consume the sequence and ack no as it was used to create the packet
+            self.sequence_no += 1
+            self.ack_no += 1
+
+            message = buffer[MAXIMUM_PAYLOAD_SIZE * i: MAXIMUM_PAYLOAD_SIZE * i + payload_len]
+            if self.encrypt:
+                nonce = nacl.utils.random(client_box.NONCE_SIZE)
+                message = client_box.encrypt(message, nonce)
+
+            # attaches the payload length of buffer to the end of the header to finish constructing the packet
+            self.data_packets.append(new_packet + message)
+        return total_packets
+
+    # method responsible for receiving acks for the data packets the sender sends
+    def recv_acks(self):
+        # tries to receive the ack as long as the connection has is not ready to be closed
+        # this can only happen when the sender receives a Connection refused error
+        while not self.can_close:
+            # tries to receive the new packet and un-pack it
+            try:
+                new_packet = self.socket.recv(PACKET_HEADER_LENGTH)
+                new_packet = struct.unpack(PACKET_HEADER_FORMAT, new_packet)
+
+                # ignores the packet if the ACK flag is not set.
+                if new_packet[PACKET_FLAG_INDEX] != SOCK352_ACK:
+                    continue
+
+                # if the last data packet acked is not set, the newly received packet is set to be the last data packet
+                # acked. Otherwise, checks if the new packet's sequence number is greater than the last data packet
+                # acked's sequence number, otherwise it assumes it could be a duplicate ACK
+                if self.last_data_packet_acked is None or\
+                        new_packet[PACKET_SEQUENCE_NO_INDEX] > self.last_data_packet_acked[PACKET_SEQUENCE_NO_INDEX]:
+                    self.last_data_packet_acked = new_packet
+
+            # in the case where the recv times out, it locks down retransmit and sets it to True
+            # to indicate that no ACk was received within the timeout window of 0.2 seconds
+            except syssock.timeout:
+                self.retransmit_lock.acquire()
+                self.retransmit = True
+                self.retransmit_lock.release()
+
+            # Catch error 111 (Connection refused) in the case where the sender is
+            # anticipating an ACK for a packet it sent out, which hasn't timed out
+            # but the server has closed the connection since it finished receiving
+            # the data and an ACK is already on its way to this sender
+            except syssock.error, error:
+                if error.errno != 111:
+                    raise error
+                self.can_close = True
+                return
+
+    # Manages a packet received based on the flag
+    def manage_recvd_data_packet(self, packet):
+        packet_header = packet[:PACKET_HEADER_LENGTH]
+        packet_data = packet[PACKET_HEADER_LENGTH:]
+        packet_header = struct.unpack(PACKET_HEADER_FORMAT, packet_header)
+        packet_header_flag = packet_header[PACKET_FLAG_INDEX]
+
+        # Check if the packet that was received has the expected sequence no
+        # for the next in-order sequence no (which is the ack number)
+        #     Case 1, the sequence number is in-order so send back the acknowledgement
+        #     Case 2, the sequence number is out-of-order so drop the packet
+        if packet_header[PACKET_SEQUENCE_NO_INDEX] != self.ack_no:
+            return
+
+        message = server_box.decrypt(packet_data)
+        # adds the payload data to the data packet array
+        self.data_packets.append(message)
+        # increments the acknowledgement by 1 since it is supposed to be the next expected sequence number
+        self.ack_no += 1
+        # finally, it creates the ACK packet using the server's current sequence and ack numbers
+        ack_packet = self.createPacket(flags=SOCK352_ACK,
+                                       sequence_no=self.sequence_no,
+                                       ack_no=self.ack_no)
+        # the sequence number is incremented since it was consumed upon packet creation
+        self.sequence_no += 1
+        # the server sends the packet to ACK the data packet it received
+        self.socket.sendto(ack_packet, self.send_address)
+
+        # the data or the payload is then itself is returned from this method
+        return message
