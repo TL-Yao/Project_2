@@ -6,7 +6,7 @@
 
 # main libraries 
 import binascii
-import socket as syssock
+import wrapper as syssock
 import struct
 import sys
 from random import randint
@@ -151,6 +151,7 @@ class socket:
         self.retransmit_lock = threading.Lock()
         # declares the last packet that was acked (for the sender only)
         self.last_data_packet_acked = None
+        self.keyNotFound = False
         
     def bind(self, address):
         self.socket.bind((address[0], portRx))
@@ -176,7 +177,6 @@ class socket:
             self.socket.sendto(syn_packet, self.send_address)
             # increments the sequence since it was consumed in creation of the SYN packet
             self.sequence_no += 1
-
             print '---- first handshake sent'
 
             received_handshake_packet = False
@@ -227,6 +227,7 @@ class socket:
 
                     if (args[0][0], str(portTx)) not in privateKeys or (args[0][0], str(portRx)) not in publicKeys:
                         print("---- Key not found")
+                        self.keyNotFound = True
                         return
                     else:
                         clientSk = privateKeys[(args[0][0], str(portTx))]
@@ -247,7 +248,6 @@ class socket:
         if self.is_connected:
             print (CONNECTION_ALREADY_ESTABLISHED_MESSAGE)
             return
-
         # Keeps trying to receive the request to connect from a potential client until we get a connection request
         got_connection_request = False
         while not got_connection_request:
@@ -255,7 +255,7 @@ class socket:
                 # tries to receive a potential SYN packet and unpacks it
                 (syn_packet, addr) = self.socket.recvfrom(PACKET_HEADER_LENGTH)
                 syn_packet = struct.unpack(PACKET_HEADER_FORMAT, syn_packet)
-
+                
                 # if the received packet is not a SYN packet, it ignores the packet
                 if syn_packet[PACKET_FLAG_INDEX] == SOCK352_SYN:
                     got_connection_request = True
@@ -320,13 +320,14 @@ class socket:
                 if (tempAddr, str(portRx)) in privateKeys:
                     secret_key = privateKeys[(tempAddr, str(portRx))]
                 else:
-                    print privateKeysHex
+                    self.keyNotFound = True
                     print '---- not find private key in accept()'
                     return self, 0
 
                 if (tempAddr, str(portTx)) in publicKeys:
                     public_key = publicKeys[(tempAddr, str(portTx))]
                 else:
+                    self.keyNotFound = True
                     print '---- not find public key in accept()'
                     return self, 0
 
@@ -361,6 +362,9 @@ class socket:
 
     def send(self, buffer):
         # makes sure that the file length is set and has been communicated to the receiver
+        if self.keyNotFound == True:
+            print "keyNotFound"
+            return
         if self.file_len == -1:
             self.socket.sendto(buffer, self.send_address)
             self.file_len = struct.unpack("!L", buffer)[0]
@@ -405,7 +409,7 @@ class socket:
                 # tries to send the packet and catches any connection refused exception which might mean
                 # the connection was unexpectedly closed/broken
                 try:
-                    self.socket.sendto(self.data_packets[resend_start_index], self.send_address)
+                    self.socket.sendto_bad(self.data_packets[resend_start_index], self.send_address)
                     print '---- %d bytes sent, package %d' % (len(self.data_packets[resend_start_index]), resend_start_index)
 
                 # print 'sent %d in send()' % sys.getsizeof(self.data_packets[resend_start_index])
@@ -428,6 +432,8 @@ class socket:
 
     def recv(self, nbytes):
         # if the file length has not been set, receive the file length from the sender
+        if self.keyNotFound == True:
+            return
         if self.file_len == -1:
             file_size_packet = self.socket.recv(struct.calcsize("!L"))
             self.file_len = struct.unpack("!L", file_size_packet)[0]
@@ -449,7 +455,7 @@ class socket:
                 # by the sender on the other side)
                 print '%d bytes left to receive' % (bytes_to_receive + PACKET_HEADER_LENGTH)
                 if self.encrypt:
-                    packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive + ENCRYPT_SIZE + 100000)
+                    packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive + ENCRYPT_SIZE)
                 else:
                     packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive)
                 print '%d bytes received' % len(packet_received)
