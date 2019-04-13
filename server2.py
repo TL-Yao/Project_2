@@ -99,7 +99,6 @@ def main():
         print ("server2: %s : received %d bytes in %d seconds, inf MB/s " % (status,filelen, lapsed_seconds))
     fd.close()
     s2.close()
-    
 
 # create a main function in Python
 if __name__ == "__main__":

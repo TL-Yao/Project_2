@@ -70,6 +70,7 @@ def main():
     # create a socket and connect to the remote server
     s = sock352.socket()
     s.connect((destination,port),sock352.ENCRYPT)
+
     #mesure the start stamp
     start_stamp = time.clock() 
 	#load the whole file into memory
@@ -94,6 +95,7 @@ def main():
 
     fd.close()
     s.close()
+
 # this gives a main function in Python
 if __name__ == "__main__":
     main()
