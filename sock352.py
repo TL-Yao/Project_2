@@ -6,7 +6,7 @@
 
 # main libraries 
 import binascii
-import wrapper as syssock
+import socket as syssock
 import struct
 import sys
 from random import randint
@@ -437,7 +437,7 @@ class socket:
                 # tries to send the packet and catches any connection refused exception which might mean
                 # the connection was unexpectedly closed/broken
                 try:
-                    self.socket.sendto_bad(self.data_packets[resend_start_index], self.send_address)
+                    self.socket.sendto(self.data_packets[resend_start_index], self.send_address)
                     print '---- %d bytes sent, package %d' % (len(self.data_packets[resend_start_index]), resend_start_index)
 
                 # print 'sent %d in send()' % sys.getsizeof(self.data_packets[resend_start_index])
@@ -514,7 +514,7 @@ class socket:
         if self.encrypt:
             opt_ptr = 0x1
 
-        print '---- flag opt_ptr: %d' % opt_ptr
+        #print '---- flag opt_ptr: %d' % opt_ptr
         return struct.Struct(PACKET_HEADER_FORMAT).pack \
             (
                 0x1,  # version
