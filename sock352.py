@@ -483,7 +483,7 @@ class socket:
                 if self.encrypt:
                     packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive + ENCRYPT_SIZE)
                 else:
-                    packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive + 1000)
+                    packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive)
                 print '%d bytes received' % len(packet_received)
 
                 # sends the packet to another method to manage it and gets back the data in return
