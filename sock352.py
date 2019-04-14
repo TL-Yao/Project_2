@@ -483,7 +483,7 @@ class socket:
                 if self.encrypt:
                     packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive + ENCRYPT_SIZE)
                 else:
-                    packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive)
+                    packet_received = self.socket.recv(PACKET_HEADER_LENGTH + bytes_to_receive + 1000)
                 print '%d bytes received' % len(packet_received)
 
                 # sends the packet to another method to manage it and gets back the data in return
@@ -625,9 +625,11 @@ class socket:
         if packet_header[PACKET_SEQUENCE_NO_INDEX] != self.ack_no:
             return
 
-        message = server_box.decrypt(packet_data)
+        if self.encrypt:
+            packet_data = server_box.decrypt(packet_data)
+
         # adds the payload data to the data packet array
-        self.data_packets.append(message)
+        self.data_packets.append(packet_data)
         # increments the acknowledgement by 1 since it is supposed to be the next expected sequence number
         self.ack_no += 1
         # finally, it creates the ACK packet using the server's current sequence and ack numbers
@@ -640,4 +642,4 @@ class socket:
         self.socket.sendto(ack_packet, self.send_address)
 
         # the data or the payload is then itself is returned from this method
-        return message
+        return packet_data
