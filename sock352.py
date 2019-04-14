@@ -226,25 +226,37 @@ class socket:
                     self.encrypt = True
 
                     if (args[0][0], str(portTx)) not in privateKeys:
-                        print '---- private key not found, using default key'
-                        clientSk = privateKeys[('*', '*')]
+                        print ('---- private key not found, using default key')
+                        if ('*', '*') not in privateKeys:
+                            print("---- No default private key found in keychain file")
+                            self.keyNotFound = True
+                            return
+                        else:
+                            clientSk = privateKeys[('*', '*')]
                     else:
                         clientSk = privateKeys[(args[0][0], str(portTx))]
 
                     if (args[0][0], str(portRx)) not in publicKeys:
                         print("---- public key not found, using default key")
-                        serverPk = publicKeys[('*', '*')]
+                        if ('*', '*') not in publicKeys:
+                            print("---- No default public key found in keychain file")
+                            self.keyNotFound = True
+                            return
+                        else:
+                            serverPk= publicKeys[('*', '*')]
                     else:
                         serverPk = publicKeys[(args[0][0], str(portRx))]
 
-                        client_box = Box(clientSk, serverPk)
-                        client_nonce = nacl.utils.random(Box.NONCE_SIZE)
+                    client_box = Box(clientSk, serverPk)
+                    client_nonce = nacl.utils.random(Box.NONCE_SIZE)
 
     def listen(self,backlog):
         # listen is not used in this assignments 
         pass
 
     def accept(self,*args):
+        if self.keyNotFound == True:
+            return
         # example code to parse an argument list (use option arguments if you want)
         global ENCRYPT, server_box, MAXIMUM_PAYLOAD_SIZE
 
@@ -325,16 +337,27 @@ class socket:
                 if (tempAddr, str(portRx)) in privateKeys:
                     secret_key = privateKeys[(tempAddr, str(portRx))]
                 else:
-                    self.keyNotFound = True
+                    #self.keyNotFound = True
                     print '---- not find private key in accept(), using default key'
-                    secret_key = privateKeys[('*', '*')]
+                    if ('*', '*') not in privateKeys:
+                        print("---- No default private key found in keychain file")
+                        self.keyNotFound = True
+                        return
+                    else:
+                        secret_key = privateKeys[('*', '*')]
+                    
 
                 if (tempAddr, str(portTx)) in publicKeys:
                     public_key = publicKeys[(tempAddr, str(portTx))]
                 else:
-                    self.keyNotFound = True
+                    #self.keyNotFound = True
                     print '---- not find public key in accept(), using public key'
-                    public_key = publicKeys[('*', '*')]
+                    if ('*', '*') not in publicKeys:
+                            print("---- No default public key found in keychain file")
+                            self.keyNotFound = True
+                            return
+                    else:
+                        public_key = publicKeys[('*', '*')]
 
                 server_box = Box(secret_key, public_key)
 
@@ -368,8 +391,8 @@ class socket:
     def send(self, buffer):
         # makes sure that the file length is set and has been communicated to the receiver
         if self.keyNotFound == True:
-            print "keyNotFound"
             return
+
         if self.file_len == -1:
             self.socket.sendto(buffer, self.send_address)
             self.file_len = struct.unpack("!L", buffer)[0]
@@ -437,8 +460,6 @@ class socket:
 
     def recv(self, nbytes):
         # if the file length has not been set, receive the file length from the sender
-        if self.keyNotFound == True:
-            return
         if self.file_len == -1:
             file_size_packet = self.socket.recv(struct.calcsize("!L"))
             self.file_len = struct.unpack("!L", file_size_packet)[0]
