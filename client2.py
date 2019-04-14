@@ -20,7 +20,7 @@ def main():
     parser.add_argument('-p','--port', help='remote sock352 port', required=False)
     parser.add_argument('-u','--udpportRx', help='UDP port to use for receiving', required=True)
     parser.add_argument('-v','--udpportTx', help='UDP port to use for sending', required=False)
-    parser.add_argument('-k','--keyfile', help='keyfile', required=False)
+    parser.add_argument('-k','--keyfile', help='keyfile', required=True)
 
     # get the arguments into local variables 
     args = vars(parser.parse_args())
@@ -65,16 +65,11 @@ def main():
         sock352.init(udpportRx,udpportRx)
 
     # load a keychain from a file
-    if keyfilename is not None:
-        keysInHex = sock352.readKeyChain(keyfilename)
+    keysInHex = sock352.readKeyChain(keyfilename)
     
     # create a socket and connect to the remote server
     s = sock352.socket()
-
-    if keyfilename is not None:
-        s.connect((destination,port),sock352.ENCRYPT)
-    else:
-        s.connect((destination, port), sock352.ENCRYPT + 1)
+    s.connect((destination,port),sock352.ENCRYPT)
 
     #mesure the start stamp
     start_stamp = time.clock() 

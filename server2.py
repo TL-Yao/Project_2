@@ -20,7 +20,7 @@ def main():
     parser.add_argument('-p','--port', help='CS 352 Socket Port (optional for part 1)', required=False)
     parser.add_argument('-u','--udpportRx', help='UDP port to use for receiving', required=True)
     parser.add_argument('-v','--udpportTx', help='UDP port to use for sending', required=False)
-    parser.add_argument('-k','--keyfile', help='keyfile', required=False)
+    parser.add_argument('-k','--keyfile', help='keyfile', required=True)
 
     args = vars(parser.parse_args())
 
@@ -52,8 +52,7 @@ def main():
 
 
     # load a keychain from a file
-    if keyfilename is not None:
-        (publicKeys,privateKeys) = sock352.readKeyChain(keyfilename)
+    (publicKeys,privateKeys) = sock352.readKeyChain(keyfilename)
 
     # This is where we set the transmit and receive
     # ports the server uses for the underlying UDP
@@ -75,11 +74,7 @@ def main():
     s.listen(5)
 
     # when accept returns, the client is connected
-    if keyfilename is not None:
-        (s2,address) = s.accept(sock352.ENCRYPT)
-    else:
-        (s2,address) = s.accept(sock352.ENCRYPT + 1)
-
+    (s2,address) = s.accept(sock352.ENCRYPT)
     start_stamp = time.clock()
 
     # this receives the size of the file

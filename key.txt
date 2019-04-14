@@ -1,0 +1,8 @@
+# This is my test keychain file:
+# These keys were generated using Python NACL library
+private		*		*	03f3d221d765eea883eb95167c04ea85c6dea0590fa9539849e580ef966f12c8
+public		*		*	51746d9f895ea0189d7bab97d55f65f9b908d8928486643361243bd3f6b04a5c
+private	localhost 8888	9020beb523c9b6ad72806fdd1210cf2a355e1edc028c83376667b753e6997db1
+public	localhost 8888	2edaa4f63b4f5c8c57f44cf514ebb52a692c82fdfded7164af413a8abf941021
+private	localhost 9999	1ca57568063db640ff204a3ec5930ee785cf50a6a96e6b36cd41b814a714998f
+public 	localhost 9999	b6da9d2cf3df1af77b12cdf449a422d9fa2e7924589bab7ad7e60939d2d32371
